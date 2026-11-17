@@ -14,16 +14,17 @@
 
 $env:SEPOLIA_RPC_URL   = "https://ethereum-sepolia-rpc.publicnode.com"
 
-# ---- 本轮部署的目标地址：全部留空，等新合约自己产生 ----
-# 2026-11-17：旧实例整体作废，三个地址不再复用
-#   ERC20 池（不可升级版） 0xB39a4222BCc65656FDFCF7d14622a7cE42F4e681
-#   旧 pSTK                0x354C959d4e6Ad44eDA2cE68285ADC3C197e8F8Bf
-#   旧 pRWD                0x416a8c972630e5b6A74f348f851881B24072d90A
-# 旧币不用它的真实理由：那两个 Mock 的 mint 是公开的（连 owner() 都不存在），
-# 任何人都能凭空铸 pSTK 再质押进来分奖励；而且 pRWD 只剩 395,200 枚，不够一期 604,800。
+# 备用 RPC：主站偶发抽风就换一行（都已在这台机器上实测返回 chainId 11155111）
+#   https://sepolia.gateway.tenderly.co
+#   https://1rpc.io/sepolia
+# 换完先验一下，能打印 11155111 再往下走：
+#   cast chain-id --rpc-url $env:SEPOLIA_RPC_URL
 #
-# 留空是有意的，不是漏填：Deploy.s.sol 把空值当成「缺失」，在广播前一次性列出所有
-# 缺失变量并退出，绝不会拿一个作废地址悄悄部署。填法见下面两段注释。
+# 注意本机的 HTTP_PROXY / HTTPS_PROXY 指向一个本地代理（127.0.0.1 的随机端口）。
+# 那个代理重启或换端口时，forge 会报 `tls handshake eof` / `Connect`，与合约无关。
+# 应急：本窗口内 $env:HTTP_PROXY=""; $env:HTTPS_PROXY="" 后重跑（直连同样通）。
+
+# ---- 本轮部署的目标地址：全部留空，等新合约自己产生 ----
 $env:STAKING           = ""     # 部署后填：代理地址（用户唯一该用的地址）
 $env:STAKE_TOKEN       = ""     # 由 DeployTokens.s.sol 打印后填
 $env:REWARD_TOKEN      = ""     # 由 DeployTokens.s.sol 打印后填
