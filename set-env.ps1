@@ -37,7 +37,7 @@ $env:SEPOLIA_RPC_URL   = "https://sepolia.gateway.tenderly.co"
 # ============================================================================
 
 # ---- 本轮部署的目标地址：全部留空，等新合约自己产生 ----
-$env:STAKING           = ""     # 部署后填：代理地址（用户唯一该用的地址）
+$env:STAKING           = "0xa10313F431f506028b7AB1b06be33556EA21015D"   # 代理，2026-11-17 部署
 $env:STAKE_TOKEN       = "0x3F0211345ce621f3845455E6937670f1F4acBf29"   # STK，2026-11-17 部署
 $env:REWARD_TOKEN      = "0xC3F080d818D8433cB6ffc5c31E1283Da705545B0"   # RWD，2026-11-17 部署
 
@@ -55,7 +55,7 @@ $env:DEMO_AMOUNT       = "1000000000000000000000"
 # Deploy in two steps: `forge create ... --gas-limit 16000000` for the
 # implementation, then Deploy.s.sol with IMPLEMENTATION set, which creates the
 # proxy and initializes it atomically.
-$env:IMPLEMENTATION    = ""
+$env:IMPLEMENTATION    = "0xAa02E88c49097ac27fb77BAbF11F0df8E525d99D"   # 实现合约，仅供升级时用
 
 # ---- Role identifiers: 32-byte hashes baked into the contract ----
 # These are NOT addresses. They are the first argument to grantRole / hasRole.

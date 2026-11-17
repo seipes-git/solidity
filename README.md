@@ -332,9 +332,27 @@ forge script script/DeployETH.s.sol --rpc-url sepolia --sender $env:DEPLOYER --g
 
 ## 链上实例
 
-> **下面这个实例已作废（2026-11-12）。** 它是 `constructor` + `immutable` 的不可升级版本，
-> 部署时 UUPS 改造还没做。它的角色、存储、接口都与当前代码不同，不要与新代码混用。
-> 当前版本需要重新部署，跑完把**代理地址**填到本节。
+**当前实例（Sepolia，2026-11-17 部署，UUPS 可升级）：**
+
+| 合约 | 地址 | 说明 |
+|---|---|---|
+| **代理（用户唯一该用的地址）** | `0xa10313F431f506028b7AB1b06be33556EA21015D` | 状态都在这里，升级也升它 |
+| 实现合约 | `0xAa02E88c49097ac27fb77BAbF11F0df8E525d99D` | 只是代码容器，没有状态、不能直接调用 |
+| STK（质押币） | `0x3F0211345ce621f3845455E6937670f1F4acBf29` | MockERC20，`mint` 仅 owner |
+| RWD（奖励币） | `0xC3F080d818D8433cB6ffc5c31E1283Da705545B0` | MockERC20，`mint` 仅 owner |
+
+部署实测：**14 笔交易，合计 18,292,175 gas ≈ 0.000549 ETH**；实现合约单笔 14,859,076 gas
+（`-g 750`，对应 9,329 B runtime × 1,530）。参数：`rewardsDuration = 604800`、
+`unstakeCooldown = 86400`、`rewardRate = 1e18`（每秒 1 枚）、一期预算 604,800 枚。
+
+部署后链上自检结果：`implementation()` 指向实现合约、两个代币地址正确、`totalSupply = 1`
+（种子质押 1 wei）、`totalOwed = 0`、两个闸门均未拉下、代理持有 604,800 枚 RWD，
+四个角色分别落在四个钱包上，**部署者已 renounce 全部角色**（四个 `hasRole` 全为 false）。
+
+### 已作废的历史实例
+
+> 下面这批是 2026-11-12 之前的 `constructor` + `immutable` 版本，已整体作废。
+> 它的角色、存储、接口都与当前代码不同，不要与新代码混用。
 
 | 合约 | 地址 | 状态 |
 |---|---|---|
@@ -342,16 +360,14 @@ forge script script/DeployETH.s.sol --rpc-url sepolia --sender $env:DEPLOYER --g
 | `pSTK`（MockERC20） | `0x354C959d4e6Ad44eDA2cE68285ADC3C197e8F8Bf` | **作废**（见下） |
 | `pRWD`（MockERC20） | `0x416a8c972630e5b6A74f348f851881B24072d90A` | **作废**（见下） |
 
-**这两个 Mock 代币在 2026-11-17 一并作废，新部署不再复用**，原因有两条：
+**那两个 Mock 代币不再复用**，原因有两条：
 
 1. **它们的 `mint` 是公开的**——连 `owner()` 都不存在，任何人都能凭空铸 pSTK 再质押进来分走整期奖励。
    当前 `MockERC20` 已经改成 `ERC20 + Ownable`，`mint` 只有部署者能调，用新币才守得住这条。
 2. `pRWD` 只剩 395,200 枚，不够一期 604,800，补铸也只能治标。
 
-新部署请走：`DeployTokens.s.sol` 造两个新币 → 把打印的两个地址填进 `set-env.ps1` → `Deploy.s.sol` 部署。
-
 旧实例的部署参数：`rewardsDuration = 604800`、`unstakeCooldown = 86400`、`FUND_AMOUNT = 604800e18`、
-种子质押 1 wei，创建交易实耗 10,885,170 gas。可升级版更大，实测见下。
+种子质押 1 wei，创建交易实耗 10,885,170 gas。
 
 ## 角色与权限
 

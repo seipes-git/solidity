@@ -1,0 +1,15 @@
+{
+  "admin": "0x48C4586acc06b9fcdE09a1abFcF1F696fA4C118C",
+  "chainId": 11155111,
+  "deployer": "0x42f3F79D6bA98aaE7D82ee48eB191fdcd4B8870e",
+  "fundAmount": "604800000000000000000000",
+  "guardian": "0xcCFf66A6FAE89EB8BeFff9E15805ea0eFdA68f2a",
+  "implementation": "0xAa02E88c49097ac27fb77BAbF11F0df8E525d99D",
+  "manager": "0x87674f36257142159fEb83fb58641cd70a5D1a07",
+  "proxy": "0xa10313F431f506028b7AB1b06be33556EA21015D",
+  "rewardToken": "0xC3F080d818D8433cB6ffc5c31E1283Da705545B0",
+  "rewardsDuration": 604800,
+  "stakeToken": "0x3F0211345ce621f3845455E6937670f1F4acBf29",
+  "unstakeCooldown": 86400,
+  "upgrader": "0x06aB17f11A98C536149193cCfCF7bC2B8511511B"
+}
