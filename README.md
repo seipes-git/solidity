@@ -339,8 +339,16 @@ forge script script/DeployETH.s.sol --rpc-url sepolia --sender $env:DEPLOYER --g
 | 合约 | 地址 | 状态 |
 |---|---|---|
 | `StakingRewards`（旧，不可升级） | `0xB39a4222BCc65656FDFCF7d14622a7cE42F4e681` | 作废 |
-| `pSTK`（MockERC20） | `0x354C959d4e6Ad44eDA2cE68285ADC3C197e8F8Bf` | 可复用 |
-| `pRWD`（MockERC20） | `0x416a8c972630e5b6A74f348f851881B24072d90A` | 可复用，余额可能不足 |
+| `pSTK`（MockERC20） | `0x354C959d4e6Ad44eDA2cE68285ADC3C197e8F8Bf` | **作废**（见下） |
+| `pRWD`（MockERC20） | `0x416a8c972630e5b6A74f348f851881B24072d90A` | **作废**（见下） |
+
+**这两个 Mock 代币在 2026-11-17 一并作废，新部署不再复用**，原因有两条：
+
+1. **它们的 `mint` 是公开的**——连 `owner()` 都不存在，任何人都能凭空铸 pSTK 再质押进来分走整期奖励。
+   当前 `MockERC20` 已经改成 `ERC20 + Ownable`，`mint` 只有部署者能调，用新币才守得住这条。
+2. `pRWD` 只剩 395,200 枚，不够一期 604,800，补铸也只能治标。
+
+新部署请走：`DeployTokens.s.sol` 造两个新币 → 把打印的两个地址填进 `set-env.ps1` → `Deploy.s.sol` 部署。
 
 旧实例的部署参数：`rewardsDuration = 604800`、`unstakeCooldown = 86400`、`FUND_AMOUNT = 604800e18`、
 种子质押 1 wei，创建交易实耗 10,885,170 gas。可升级版更大，实测见下。

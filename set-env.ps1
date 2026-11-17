@@ -14,13 +14,19 @@
 
 $env:SEPOLIA_RPC_URL   = "https://ethereum-sepolia-rpc.publicnode.com"
 
-# Deployed instance (see README "on-chain instance")
-# NOTE: this address is the OLD non-upgradeable build, retired on 2026-11-12.
-# After deploying the UUPS version, replace STAKING with the PROXY address and
-# fill IMPLEMENTATION below.
-$env:STAKING           = "0xB39a4222BCc65656FDFCF7d14622a7cE42F4e681"
-$env:STAKE_TOKEN       = "0x354C959d4e6Ad44eDA2cE68285ADC3C197e8F8Bf"
-$env:REWARD_TOKEN      = "0x416a8c972630e5b6A74f348f851881B24072d90A"
+# ---- 本轮部署的目标地址：全部留空，等新合约自己产生 ----
+# 2026-11-17：旧实例整体作废，三个地址不再复用
+#   ERC20 池（不可升级版） 0xB39a4222BCc65656FDFCF7d14622a7cE42F4e681
+#   旧 pSTK                0x354C959d4e6Ad44eDA2cE68285ADC3C197e8F8Bf
+#   旧 pRWD                0x416a8c972630e5b6A74f348f851881B24072d90A
+# 旧币不用它的真实理由：那两个 Mock 的 mint 是公开的（连 owner() 都不存在），
+# 任何人都能凭空铸 pSTK 再质押进来分奖励；而且 pRWD 只剩 395,200 枚，不够一期 604,800。
+#
+# 留空是有意的，不是漏填：Deploy.s.sol 把空值当成「缺失」，在广播前一次性列出所有
+# 缺失变量并退出，绝不会拿一个作废地址悄悄部署。填法见下面两段注释。
+$env:STAKING           = ""     # 部署后填：代理地址（用户唯一该用的地址）
+$env:STAKE_TOKEN       = ""     # 由 DeployTokens.s.sol 打印后填
+$env:REWARD_TOKEN      = ""     # 由 DeployTokens.s.sol 打印后填
 
 # Deployer EOA. Keep it identical to `--account deployer`; the deploy script
 # refuses to broadcast when the two disagree.
