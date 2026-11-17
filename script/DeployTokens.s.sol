@@ -33,9 +33,8 @@ contract DeployTokens is Script {
             address stake = vm.parseJsonAddress(existing, ".stakeToken");
             address reward = vm.parseJsonAddress(existing, ".rewardToken");
 
-            // 清单只能证明「上次脚本跑到了写文件那一步」，不能证明链上真有合约。
-            // 广播中途失败时这份文件照样会被写下来（2026-11-17 实际踩到：gasLimit 差几千，
-            // CREATE 回滚，清单却记了两个空地址）。所以这里必须回链上核一遍代码
+            // 清单只能证明「脚本跑到了写文件那一步」，证明不了链上真有合约：
+            // CREATE 回滚时文件照样会被写下来，记的却是两个空地址。所以必须回链上核代码
             require(
                 stake.code.length > 0 && reward.code.length > 0,
                 "record points to addresses without code: delete deployments/sepolia.tokens.json and redeploy"

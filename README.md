@@ -44,8 +44,11 @@ test/
 │   ├── RoleHandover.t.sol       角色移交：正确顺序、ADMIN 不可逆、治理锁死但资金可用
 │   ├── Invariants.t.sol         状态型不变量：`余额 == 仓位 + 冷却本金` + 解锁时间序关系
 │   └── mocks/Receivers.sol      重入 / 拒收 / 普通合约钱包
-└── MockERC20/
-    └── MockERC20.t.sol          铸币权限与基本转账语义
+├── MockERC20/
+│   └── MockERC20.t.sol          铸币权限与基本转账语义
+└── fork/
+    ├── SepoliaFork.t.sol        对真实已部署实例：可行性、gas 基线、非标准代币
+    └── mocks/FeeOnTransferERC20.sol  每次转账抽 1% 的代币（把「不支持」跑成证据）
 
 audit/FINDINGS.md               审计发现与修复状态（审计对话与编写对话共用）
 ```
@@ -85,6 +88,7 @@ forge test --match-path "test/StakingRewards/*"        # V1
 forge test --match-path "test/StakingRewardsV2/*"      # V2（含真实升级）
 forge test --match-path "test/StakingRewardsETH/*"     # ETH 池
 forge test --match-path "test/MockERC20/*"             # 测试代币
+forge test --match-path "test/fork/*"                  # fork 组（需 SEPOLIA_RPC_URL，否则整组 skip）
 forge test --match-contract ETHRecoverTest -vvv        # 单个关注点 + 完整调用轨迹
 ```
 
@@ -922,6 +926,10 @@ forge verify-contract <RWD> src/MockERC20.sol:MockERC20 --chain sepolia --ethers
 
 `--chain sepolia` 会自动拼出 Etherscan V2 的地址（`api.etherscan.io/v2/api?chainid=11155111`），不需要手写 `--verifier-url`。
 
+> **改注释会让字节码对不上。** Solidity 把源码哈希写进 runtime 的 metadata，所以哪怕只改一行注释，
+> 重新编译出的 `deployedBytecode` 也与链上那份不再逐字节相同（尺寸不变，metadata 是定长）。
+> 已部署合约与其验证结果不受影响；但要**重新验证**某个老地址，必须 checkout 当次部署的 commit。
+
 ### 代理识别
 
 源码验证通过只是「这份字节码能对上这份源码」。要让 Etherscan 把代理和实现接起来，还得再做一步代理识别，两种办法任选：
@@ -988,7 +996,7 @@ curl "https://api.etherscan.io/v2/api?chainid=11155111&module=contract&action=ch
 ## 常用命令
 
 ```shell
-forge test                                                      # 全部（24 套件 / 268 条）
+forge test                                                      # 全部（25 套件；268 条本地 + fork 组，无 RPC 时 fork 整组 skip）
 forge test --match-path "test/StakingRewardsETH/*"              # 只跑 ETH 池
 forge test --match-test test_ZeroCooldownReturnsPrincipalImmediately -vvvv    # 单条 + 完整调用轨迹
 forge test --match-contract ETHRecoverTest -vv                   # 一个关注点 + 事件与返回值

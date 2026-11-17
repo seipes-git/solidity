@@ -10,15 +10,12 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// @title StakingRewardsETH —— 原生 ETH 单池质押
 /// @notice 与 StakingRewards 的区别只有一件事：质押物是 ETH，不是 ERC20。
 ///         奖励数学、角色分层、两级闸门、解押冷却全部保持一致。
-/// @dev 为什么不把 ETH 塞进原来的合约：
-///      1. 原合约已上链运行、有真实仓位，改动它的资金路径等于让已部署的代码失效
-///      2. 单资产池的语义更清楚：一个池只回答「这个资产怎么分奖励」
-///      3. ETH 转账会触发接收者代码，重入面比 ERC20 大，独立出来才能针对性地守
+/// @dev 为什么不复用 ERC20 版：原合约已上链且有真实仓位，改它的资金路径等于废掉已部署代码；
+///      而且 ETH 转账会把控制权交给接收者，重入面比 ERC20 大，需要单独守。
 ///
-///      与原合约的三处实质差异：
-///      - `stake()` 无参数且 payable，金额就是 msg.value
-///      - 转出用 `call{value}`，不是 `safeTransfer`
-///      - 新增 `totalPending`：没有它，`recoverETH` 的分不清「误转的 ETH」和「用户锁在冷却里的本金」
+///      三处实质差异：`stake()` 无参 payable（金额即 msg.value）；转出用 `call{value}`
+///      而非 `safeTransfer`；多了 `totalPending`——没有它，`recoverETH` 分不清「误转的 ETH」
+///      和「用户锁在冷却里的本金」
 contract StakingRewardsETH is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -259,19 +256,11 @@ contract StakingRewardsETH is AccessControl, Pausable, ReentrancyGuard {
         emit RewardPaid(msg.sender, reward);
     }
 
-    /// @notice 紧急退出：本金立即全额退还（计息本金 + 冷却中的本金），代价是放弃全部未领奖励
-    /// @dev 本合约**不可升级**，所以这个出口只能在部署前决定要不要；上线后再想加只能重新部署。
-    ///      它与 V2 的 `emergencyWithdraw` 语义一致，差别是这里还要同步 `totalPending`——
-    ///      `recoverETH` 的安全上限是 `balance − totalSupply − totalPending`，
-    ///      少减一笔就会把那部分本金当成「余量」让管理员取走。
-    ///
-    ///      三个语义点：
-    ///      - **不受 paused / claimPaused 影响**：退的是本金，不是奖励
-    ///      - **无视 unlockTime**：这正是它和 `withdraw` 的唯一区别
-    ///      - **奖励主动放弃且负债同步销账**：`totalOwed` 减掉放弃的部分，
-    ///        这笔钱从「名花有主」变成「可用盈余」
-    ///
-    ///      先跑 `updateReward` 让此刻之前的应计如实入账，再清状态、最后转账（CEI）
+    /// @notice 紧急退出：本金全额退还（计息本金 + 冷却中的本金），代价是放弃全部未领奖励
+    /// @dev 语义与 V2 一致，但这里还要同步 `totalPending`——`recoverETH` 的上限是
+    ///      `balance − totalSupply − totalPending`，漏减就会把本金当余量放给管理员。
+    ///      三个语义点：不受两个闸门影响（退的是本金）、无视 unlockTime（与 withdraw 的唯一区别）、
+    ///      奖励放弃且负债销账（否则长期显示偿付不足）。顺序：先结算 → 清状态 → 转账
     function emergencyWithdraw() external nonReentrant updateReward(msg.sender) {
         uint256 staked = balanceOf[msg.sender];
         uint256 pending = pendingUnstake[msg.sender].amount;
@@ -379,10 +368,9 @@ contract StakingRewardsETH is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /// @notice 取走「不属于任何人」的 ETH：误转进来的、或者 selfdestruct 强塞的
-    /// @dev 上限 = 余额 - 用户本金 - 锁在冷却里的本金。
-    ///      没有这道上限，管理员就能把用户还没取回的冷资本金直接拿走 ——
-    ///      那是挪用，不是救援。这是本合约与 ERC20 版最关键的一处不对称：
-    ///      ERC20 版可以「禁止取回 stakingToken」，ETH 版没有这个开关，只能靠算术守住
+    /// @dev 上限 = 余额 − 计息本金 − 冷却中本金。没有它，管理员就能拿走用户还没取回的
+    ///      冷资本金——那是挪用不是救援。ERC20 版可以干脆禁止取回 stakingToken，
+    ///      ETH 版没有这个开关，只能靠算术守住
     function recoverETH() external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 owed = totalSupply + totalPending;
         uint256 balance = address(this).balance;

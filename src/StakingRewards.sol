@@ -13,24 +13,15 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 /// @title StakingRewards —— 单池质押挖矿（UUPS 可升级版本）
 /// @notice 用户质押 stakingToken，按「每秒恒定释放」的方式线性瓜分 rewardToken。
 ///         奖励速率由 REWARDS_MANAGER_ROLE 用 notifyRewardAmount 注入，一个周期内 rewardRate 不变。
-/// @dev 设计边界（刻意不做的事）：
-///      - 单池、单奖励币，不支持多币种叠加、不支持 ETH 原生质押
-///      - 无质押上限；有最小质押额（防粉尘）
+/// @dev 边界：单池、单奖励币、不支持 ETH 原生质押（ETH 走独立合约）。
 ///
-///      **可升级的代价，必须写清楚**：
-///      升级权限能替换合约的全部逻辑，包括「你的钱怎么算」。因此它和日常治理权限分开：
-///      UPGRADER_ROLE 只能升级，不能改参数；REWARDS_MANAGER_ROLE 只能改参数，不能升级。
-///      生产环境里 UPGRADER_ROLE 应当交给时间锁（TimelockController）或多签，
-///      让用户在下一次升级生效前有时间退出——这是可升级合约唯一诚实的用法。
+///      升级权单独成一个角色：它能替换全部逻辑，包括「钱怎么算」，所以不能和改参数的
+///      REWARDS_MANAGER_ROLE 合并。生产环境应交给时间锁或多签，给用户留出退出窗口。
 ///
-///      **暂停只冻结入口，不冻结出口**：pause 只挂在 stake 上。
-///      requestUnstake / withdraw / getReward 永远可用——用户的本金不该因为管理员的操作被锁住。
-///      这条和常见实现相反（很多项目 pause 掉 withdraw），是刻意的取舍
+///      暂停只冻入口不冻出口：pause 只挂 stake，解押 / 提取 / 领奖永远可用。
 ///
-///      **存储布局约定（升级时唯一不能违反的规则）**：
-///      下面的状态变量顺序就是 V1 的布局。V2 只能「在 claimPaused 之后、__gap 之前」追加新变量，
-///      并把 __gap 的长度相应减少。删除、重排、改类型都会让已存入的数据错位。
-///      编译器不会在升级时帮你检查这件事，只能靠这条约定和 OZ Upgrades 插件
+///      存储布局：下方变量顺序即 V1 布局。V2 只能在 claimPaused 之后、__gap 之前追加，
+///      并相应缩短 __gap。删除、重排、改类型都会让已存数据错位，编译器不会替你检查
 contract StakingRewards is
     Initializable,
     AccessControlUpgradeable,
@@ -185,7 +176,7 @@ contract StakingRewards is
         _;
     }
 
-    /// @dev 只挡发奖，不挡本金。余额不足时用它把发放排成有序队列，而不是让先到的人抢光
+    /// @dev 只挡发奖，不挡本金（细节见 claimPaused 的注释）
     modifier whenNotClaimPaused() {
         if (claimPaused) revert ClaimIsPaused();
         _;
@@ -210,11 +201,10 @@ contract StakingRewards is
         // delta == 0 时 rpt == stored，写回是空操作，跳过省一次 SSTORE
         if (delta > 0) {
             rewardPerTokenStored = rpt;
-            // 负债按全局增量入账：totalSupply 在这段区间内是常量（本函数永远在余额变更之前跑），
-            // 因此它天然覆盖所有用户的应计，包括从没调用过结算的那些人。
-            // 注意：这里每个边界各 floor 一次，而用户的应发是跨边界一次性 floor，
-            // 所以逐用户 floor 之和**可以超过**这个累计值（最多 n-1 wei），
-            // 领取时由 `getReward` 的夹逼吸收，不会下溢
+            // 按全局增量入账：本函数永远在余额变更之前跑，此处 totalSupply 是常量，
+            // 所以它天然覆盖所有人的应计，包括从没调用过结算的人。
+            // 逐边界 floor 会让「各户之和」略超这个累计值（≤ n-1 wei），
+            // 领取时由 getReward 的夹逼吸收
             totalOwed += (supply * delta) / PRECISION;
         }
         lastUpdateTime = lastTime;
@@ -355,11 +345,9 @@ contract StakingRewards is
         if (reward == 0) return;
 
         rewards[msg.sender] = 0;
-        // 夹逼而不是直接减：`totalOwed` 在每个结算边界各 floor 一次，而用户的应发是
-        // 跨多个边界之后一次性 floor（Σfloor ≤ floor(Σ)），差额可达 n-1 wei。
-        // 直接 `totalOwed -= reward` 会在差额非零时 panic 0x11，把领奖、`exit`、
-        // 以及 V2 的 `emergencyWithdraw` 一起打死——后者是本金最后的出口，不能失效。
-        // 差额本身就是 floor 吃掉的（余额那边并不缺这几 wei），清零比留残值更接近事实
+        // 夹逼而不是直接减：Σfloor ≤ floor(Σ)，差额可达 n-1 wei，直接减会 panic 0x11，
+        // 连 `exit` 和 V2 的 `emergencyWithdraw`（本金最后的出口）一起打死。
+        // 差额是 floor 吃掉的，余额并不缺这几 wei，清零比留残值更接近事实
         uint256 owed = totalOwed;
         totalOwed = reward >= owed ? 0 : owed - reward;
         rewardToken.safeTransfer(msg.sender, reward);
@@ -368,14 +356,12 @@ contract StakingRewards is
     }
 
     /// @notice 一次性把本金转成解押请求 + 领走奖励。
-    /// @dev 冷却大于 0 时，本金还要再调一次 withdraw 才能到手——这是冷却期的必然代价，
-    ///      不是漏发。想要单笔退出就把 unstakeCooldown 设成 0。
-    ///      claimPaused 期间跳过领奖：exit 的语义是「退出」，不能因为发奖被暂停就整笔失败，
-    ///      那样会把用户的退出路径一起堵死。奖励留在 rewards 里，恢复后照常领取
+    /// @dev 冷却 > 0 时本金要再调一次 withdraw——这是冷却的必然代价，不是漏发。
+    ///      claimPaused 期间跳过领奖而不是整笔失败：退出路径不能被发奖开关堵死
     function exit() external {
-        // 不挂 nonReentrant：内部几次调用各自持守卫，本函数自身不发钱
-        // 先把「已到期」的待提本金落袋：否则下一步 `requestUnstake` 合并挂起请求时会取较晚的
-        // 解锁时间，把已经等满冷却的那笔重新锁一整个周期——名字叫 exit，行为是再多锁一天
+        // 不挂 nonReentrant：内部几次调用各自持守卫，本函数自己不转账。
+        // 先把已到期的本金落袋，否则下一步 requestUnstake 合并请求时会取较晚的解锁时间，
+        // 把等满冷却的那笔重新锁一整期
         UnstakeRequest memory request = pendingUnstake[msg.sender];
         if (request.amount > 0 && block.timestamp >= request.unlockTime) withdraw();
 
@@ -447,9 +433,8 @@ contract StakingRewards is
     }
 
     /// @notice 救回误转进来的其它代币，转给调用者。stakingToken 和 rewardToken 都不许动
-    /// @dev `virtual` 是给 V2 留的：V2 把 rewardToken 从「一律禁止」改成「只能取盈余部分」，
-    ///      和 Ethernet 池的 recoverETH 同构。加 virtual 不改变本合约的行为与字节码语义，
-    ///      已部署的实例不受影响
+    /// @dev `virtual` 给 V2 留口：V2 把 rewardToken 从「一律禁止」放宽成「只能取盈余」，
+    ///      与 ETH 池的 recoverETH 同构
     function recoverERC20(address token, uint256 amount) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(stakingToken)) revert CannotRecoverStakingToken();
         if (token == address(rewardToken)) revert CannotRecoverRewardToken();
