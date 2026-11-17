@@ -1,4 +1,4 @@
-# StakingRewards - Sepolia environment
+﻿# StakingRewards - Sepolia environment
 #
 # Usage (note the dot and space at the front - it makes the variables
 # stay in YOUR current window instead of dying with a child process):
@@ -24,10 +24,22 @@ $env:SEPOLIA_RPC_URL   = "https://sepolia.gateway.tenderly.co"
 # 那个代理重启或换端口时，forge 会报 `tls handshake eof` / `Connect`，与合约无关。
 # 应急：本窗口内 $env:HTTP_PROXY=""; $env:HTTPS_PROXY="" 后重跑（直连同样通）。
 
+# ============================================================================
+# 本文件必须保存为「UTF-8 with BOM」。
+#
+# 原因：Windows 上的旧版 shell 读「无 BOM」文件时按系统 ANSI 代码页解码，
+# 中文注释会变成乱码；乱码里若出现续行符，会把下一行整行吞进注释。
+# 2026-11-17 就因此让 STAKE_TOKEN 静默变成空值，而报错却是
+# "missing env (...): STAKE_TOKEN"，看上去像根本没填。
+#
+# 编辑器另存时若把 BOM 去掉了，用「UTF-8 with BOM」重新保存即可。
+# 验证方法：载入本文件后，下面三个地址都应能正确打印出来。
+# ============================================================================
+
 # ---- 本轮部署的目标地址：全部留空，等新合约自己产生 ----
 $env:STAKING           = ""     # 部署后填：代理地址（用户唯一该用的地址）
-$env:STAKE_TOKEN       = ""     # 由 DeployTokens.s.sol 打印后填
-$env:REWARD_TOKEN      = ""     # 由 DeployTokens.s.sol 打印后填
+$env:STAKE_TOKEN       = "0x3F0211345ce621f3845455E6937670f1F4acBf29"   # STK，2026-11-17 部署
+$env:REWARD_TOKEN      = "0xC3F080d818D8433cB6ffc5c31E1283Da705545B0"   # RWD，2026-11-17 部署
 
 # Deployer EOA. Keep it identical to `--account deployer`; the deploy script
 # refuses to broadcast when the two disagree.
