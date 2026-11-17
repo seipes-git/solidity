@@ -30,12 +30,21 @@ contract DeployTokens is Script {
             // 读的是本脚本自己写的清单，不是任意路径
             // forge-lint: disable-next-line(unsafe-cheatcode)
             string memory existing = vm.readFile(RECORD);
-            console2.log("tokens already recorded, nothing deployed");
-            console2.log("  stake :", vm.parseJsonAddress(existing, ".stakeToken"));
-            console2.log("  reward:", vm.parseJsonAddress(existing, ".rewardToken"));
-            _printEnvSnippet(
-                vm.parseJsonAddress(existing, ".stakeToken"), vm.parseJsonAddress(existing, ".rewardToken")
+            address stake = vm.parseJsonAddress(existing, ".stakeToken");
+            address reward = vm.parseJsonAddress(existing, ".rewardToken");
+
+            // 清单只能证明「上次脚本跑到了写文件那一步」，不能证明链上真有合约。
+            // 广播中途失败时这份文件照样会被写下来（2026-11-17 实际踩到：gasLimit 差几千，
+            // CREATE 回滚，清单却记了两个空地址）。所以这里必须回链上核一遍代码
+            require(
+                stake.code.length > 0 && reward.code.length > 0,
+                "record points to addresses without code: delete deployments/sepolia.tokens.json and redeploy"
             );
+
+            console2.log("tokens already recorded, nothing deployed");
+            console2.log("  stake :", stake);
+            console2.log("  reward:", reward);
+            _printEnvSnippet(stake, reward);
             return;
         }
 
@@ -48,6 +57,14 @@ contract DeployTokens is Script {
         stakeToken.mint(me, STAKE_SUPPLY);
         rewardToken.mint(me, fund);
         vm.stopBroadcast();
+
+        // 先确认两个合约真的在链上，再写清单。
+        // 反过来的顺序（先写清单再检查）会在广播失败时留下一份指向空地址的记录，
+        // 下一次运行就会「已记录、跳过部署」，把错误固化下来
+        require(
+            address(stakeToken).code.length > 0 && address(rewardToken).code.length > 0,
+            "deployment did not land: no code at a token address"
+        );
 
         if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
             console2.log("dry run: token record NOT written (add --broadcast to commit)");

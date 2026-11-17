@@ -12,7 +12,7 @@
 # `--account deployer`, which reads the encrypted keystore and asks for a
 # password each run.
 
-$env:SEPOLIA_RPC_URL   = "https://ethereum-sepolia-rpc.publicnode.com"
+$env:SEPOLIA_RPC_URL   = "https://sepolia.gateway.tenderly.co"
 
 # 备用 RPC：主站偶发抽风就换一行（都已在这台机器上实测返回 chainId 11155111）
 #   https://sepolia.gateway.tenderly.co

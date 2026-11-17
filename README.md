@@ -540,8 +540,9 @@ cast call $env:STAKING "claimPaused()(bool)" --rpc-url sepolia
 . .\set-env.ps1                      # 载入地址与参数（不含私钥）
 
 # 一次性：造两个代币，跑完把打印出来的两行粘回 set-env.ps1
+# -g 1000 不能省：单个 Mock 在 Sepolia 上要 3.9 M（见下），估算才 61 万，600 都还不够
 forge script script/DeployTokens.s.sol --rpc-url $env:SEPOLIA_RPC_URL `
-  --account deployer --sender $env:DEPLOYER -g 300 --slow --broadcast
+  --account deployer --sender $env:DEPLOYER -g 1000 --slow --broadcast
 
 # 干跑：不发交易、不写清单，只看每一步会不会过
 forge script script/Deploy.s.sol --rpc-url $env:SEPOLIA_RPC_URL `
@@ -557,6 +558,20 @@ forge script script/Deploy.s.sol --rpc-url $env:SEPOLIA_RPC_URL `
 V1 实现合约本地估 2,119,214，×7.5 = 1,589 万，够需要的 1,479 万；
 ×8 = 1,695 万，已经越过 EIP-7825 的单笔上限 16,777,216，会被节点直接拒。
 **报 OOG 才小幅上调到 780，不要一步跳到 800。**
+
+**造币那条为什么是 `-g 1000`，而池子只需要 750**：两个合约的实际开销结构不同。
+
+| | 本地估算 | Sepolia 实际 | 倍数够用的下限 |
+|---|---|---|---|
+| MockERC20（2,200 B） | 612,896 | **约 3.9 M** | ≈ 640 |
+| StakingRewards 实现（9,329 B） | 2,119,214 | 约 1,479 万 | ≈ 700 |
+
+`MockERC20` 的估算被低估得更狠，因为它一次写入五个新槽（`_name` / `_symbol` / `_totalSupply` /
+`_owner` / `balances`），8037 下每个新槽 97,920，光这一项就 49 万；再加上 2,200 B × 1,530 = 337 万的
+code deposit，实际接近 390 万，而估算只给 61 万。**2026-11-17 实测：`-g 600` 拿到 3,677,376 的上限，
+`gasUsed` 正好等于这个数（OOG），第一笔 CREATE 回滚。**
+
+倍数上限在这条上不是问题：`16,777,216 / 612,896 ≈ 27`，`-g 1000` 只到 613 万，离天花板还很远。
 这条只覆盖 V1：V2 要 1,632 万，`-g 750`（1,589 万）**不够**，得用
 `forge create --gas-limit 16777216` 或 `-g 780`。
 

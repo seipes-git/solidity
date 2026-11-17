@@ -211,7 +211,12 @@ contract Deploy is Script {
                             广播前校验
     //////////////////////////////////////////////////////////////*/
 
-    function _preflightFresh(Cfg memory c, address me) internal pure {
+    function _preflightFresh(Cfg memory c, address me) internal view {
+        // 代币地址必须有代码。广播中途失败时，上一份清单可能记着一个「从没部署成功」的地址，
+        // 直接拿它初始化会得到一个所有人都转不进去的死池子
+        require(c.stakeToken.code.length > 0, "STAKE_TOKEN has no code on this chain");
+        require(c.rewardToken.code.length > 0, "REWARD_TOKEN has no code on this chain");
+
         require(c.duration != 0, "duration must be > 0");
         require(c.fund % c.duration == 0, "FUND_AMOUNT must divide evenly by duration, else rate truncates");
         require(c.fund / c.duration > 0, "reward per second is zero");
