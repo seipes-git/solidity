@@ -1,0 +1,14 @@
+{
+  "admin": "0x48C4586acc06b9fcdE09a1abFcF1F696fA4C118C",
+  "chainId": 11155111,
+  "createdAtBlock": 12153734,
+  "deployer": "0x42f3F79D6bA98aaE7D82ee48eB191fdcd4B8870e",
+  "fundAmount": "604800000000000000000000",
+  "guardian": "0xcCFf66A6FAE89EB8BeFff9E15805ea0eFdA68f2a",
+  "manager": "0x87674f36257142159fEb83fb58641cd70a5D1a07",
+  "pool": "0x2F8663eDa091976c2257c3B1534aEb75F3a833d6",
+  "rewardToken": "0xC3F080d818D8433cB6ffc5c31E1283Da705545B0",
+  "rewardsDuration": 604800,
+  "seedStake": 1,
+  "unstakeCooldown": 86400
+}

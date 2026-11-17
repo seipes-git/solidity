@@ -323,23 +323,62 @@ test_RecoverETHSeparatesAllThreePots       计息本金 / 冷却本金 / 误转�
 
 ### 部署
 
+ETH 池**不可升级**，一笔创建交易成型（没有代理、没有 `initialize`、没有 `UPGRADER_ROLE`）。
+脚本是 `script/DeployETH.s.sol`，清单落在 `deployments/sepolia.eth.json`，可以重复跑——
+第二遍会复用同一个池子，注资/开奖/种子质押各自看链上状态决定跳不跳。
+
 ```powershell
-forge script script/DeployETH.s.sol --rpc-url sepolia --sender $env:DEPLOYER --gas-estimate-multiplier 800 --slow --broadcast
+. .\set-env.ps1
+
+# 0. 奖励币得先在自己手上。RWD 现在全在 ERC20 池里，部署者手上是 0；
+#    MockERC20 的 owner 就是部署者，补铸一笔（演示币，主网当然不能这么干）
+cast send $env:REWARD_TOKEN "mint(address,uint256)" $env:DEPLOYER 604800000000000000000000 `
+  --account deployer --rpc-url $env:SEPOLIA_RPC_URL
+
+# 1. 部署 → 注资 → 开奖 → 种子质押 1 wei → 三角色移交 → 自检
+forge script script/DeployETH.s.sol:DeployETH --rpc-url $env:SEPOLIA_RPC_URL `
+  --account deployer --sender $env:DEPLOYER --broadcast -vv
 ```
 
-**倍数要按链算**：runtime 7,421 字节、主网约 **1,831,372 gas**；Sepolia 按 1,530/字节折算约 **1,248 万**。
-本地估算 × 倍数必须落在 16,777,216 以内：`-g 800`（1,465 万）够用，`-g 1000` 会越过上限被拒。
+**`--sender` 不是可选项。** `--account` 只决定谁签名广播，不改变脚本里的 `msg.sender`；
+漏掉它时 `msg.sender` 是 Foundry 默认地址 `0x1804c8AB…`，于是 `renounceRole` 撤的是一个本来
+就没有角色的地址，真部署者保留全部角色，而 `_verify` 里的 `!hasRole(ROLE, me)` 恰好也通过——
+脚本报成功、治理却没交出去。两个部署脚本现在都在第一行硬拦这个（`require(me != DEFAULT_SENDER, …)`），
+并且会拿 `$env:DEPLOYER` 与 `--sender` 对一次，不一致直接停。
+
+先不加 `--broadcast` 干跑一遍：干跑不写清单，且会把 `verify` 跑一遍，能提前拦下配置错误。
+带上 `--broadcast` 之后，任何一步 revert 都会留下半完成状态——所以先干跑。
+
+**预算单独一份**：`ETH_FUND_AMOUNT` 不设时等于 `REWARDS_DURATION × 1e18`（7 天 → 604,800 枚）。
+两个池子各跑各的周期，共用一份钱会互相挤占，所以别把它指到 ERC20 池的预算上。
+
+**倍数按链算**：节点对这笔创建交易的估算是 **12,496,848 gas**。默认 `-g 130` 给到 1,625 万，
+刚好落在 EIP-7825 的 16,777,216 以内；`-g 140` 就是 1,750 万，会被节点直接拒收。
+所以这个脚本**不要手动调倍数**，用默认值。（主网按 200 gas/字节算只有约 183 万，倍数随便加都行。）
+
+**实测过的路径**（本地 anvil，chainId 与 Sepolia 一致）：部署 → 注资 → 开奖 → 种子质押 →
+三角色移交全部一次过，`verify` 段没有一条断言失败；第二遍运行时三段全部 `skipped`；
+把 `REWARDS_DURATION` 故意写错，脚本在 `_assertReusable` 处停下并报
+`env REWARDS_DURATION != recorded pool`，不会把 A 池当成 B 池往里注资。
 
 ## 链上实例
 
-**当前实例（Sepolia，2026-11-17 部署，UUPS 可升级）：**
+**当前实例（Sepolia，2026-11-17 部署，同日升级到 V2，UUPS 可升级）：**
 
 | 合约 | 地址 | 说明 |
 |---|---|---|
 | **代理（用户唯一该用的地址）** | `0xa10313F431f506028b7AB1b06be33556EA21015D` | 状态都在这里，升级也升它 |
-| 实现合约 | `0xAa02E88c49097ac27fb77BAbF11F0df8E525d99D` | 只是代码容器，没有状态、不能直接调用 |
+| 实现合约（当前 = V2） | `0x1A81e04A8B01580b44d3e84fF49D0518D8B45437` | 只是代码容器，没有状态、不能直接调用 |
+| 实现合约（V1，已退役） | `0xAa02E88c49097ac27fb77BAbF11F0df8E525d99D` | 回滚目标，槽位与 V2 一致 |
 | STK（质押币） | `0x3F0211345ce621f3845455E6937670f1F4acBf29` | MockERC20，`mint` 仅 owner |
 | RWD（奖励币） | `0xC3F080d818D8433cB6ffc5c31E1283Da705545B0` | MockERC20，`mint` 仅 owner |
+| **ETH 池（原生质押，不可升级）** | `0x2F8663eDa091976c2257c3B1534aEb75F3a833d6` | 构造函数版，没有代理，一笔交易成型 |
+
+ETH 池部署实测：**10 笔交易，合计 13,606,558 gas**，其中创建交易 **12,580,890 gas**
+（runtime 7,421 B × 1,530/字节 + 构造执行）。参数与 ERC20 池对齐：`rewardsDuration = 604800`、
+`unstakeCooldown = 86400`、`rewardRate = 1e18`、注资 604,800 枚 RWD、种子质押 1 wei。
+三个角色落在 admin / guardian / manager 三个钱包上，部署者三项 `hasRole` 全为 false。
+源码已用构造参数 `(0xC3F0…45B0, 604800, 86400)` 验证通过。
 
 部署实测：**14 笔交易，合计 18,292,175 gas ≈ 0.000549 ETH**；实现合约单笔 14,859,076 gas
 （`-g 750`，对应 9,329 B runtime × 1,530）。参数：`rewardsDuration = 604800`、
@@ -348,6 +387,26 @@ forge script script/DeployETH.s.sol --rpc-url sepolia --sender $env:DEPLOYER --g
 部署后链上自检结果：`implementation()` 指向实现合约、两个代币地址正确、`totalSupply = 1`
 （种子质押 1 wei）、`totalOwed = 0`、两个闸门均未拉下、代理持有 604,800 枚 RWD，
 四个角色分别落在四个钱包上，**部署者已 renounce 全部角色**（四个 `hasRole` 全为 false）。
+
+### V1 → V2 升级（2026-11-17 已完成）
+
+| 项 | 值 |
+|---|---|
+| 升级交易 | `0x97bc3dd2be31c94e0074b50e2d106e94e920e301f9ea79ef05ddde259d29b4e5` |
+| 发起账户 | `0x06aB17f11A98C536149193cCfCF7bC2B8511511B`（`UPGRADER_ROLE`） |
+| 区块 / gas | `12153519` / `40,032` |
+| 新实现部署 | `0x1A81e04A8B01580b44d3e84fF49D0518D8B45437`，10,332 B，单笔 16,410,065 gas |
+| 调用 | `upgradeToAndCall(新实现, 0x)`，`msg.value = 0` |
+| 状态变量 | 17 个槽逐一相同（`forge inspect` diff 为空），**未做任何迁移** |
+| 升级后 | `version() = 2`、`totalOwedLive()` / `solvencyRatio()` 可用 |
+
+升级前后逐项快照完全一致（`totalSupply` / `rewardRate` / `periodFinish` / `lastUpdateTime` /
+`rewardPerTokenStored` / `totalOwed` / `claimPaused` / `unstakeCooldown` / `balanceOf`），
+仓位与已计未领奖励都在。完整步骤见 `UPGRADE-V2.md`。
+
+Etherscan 上有个坑：换实现后 `Proxy` 仍标记为 `1`，但 `Implementation` 字段还停在旧地址，
+`Read as Proxy` 依旧显示 V1 的 ABI（看不到 `version()`）。要重新触发一次代理识别才会刷新，
+做法见 `UPGRADE-V2.md` 的「步骤 2」。
 
 ### 已作废的历史实例
 
@@ -848,9 +907,39 @@ $env:ETHERSCAN_API_KEY = "在 etherscan.io/apis 免费申请"
 # 验证实现合约：它没有构造参数，所以不需要 --constructor-args
 forge verify-contract $env:IMPLEMENTATION src/StakingRewards.sol:StakingRewards --chain sepolia --etherscan-api-key $env:ETHERSCAN_API_KEY
 
-# 代理地址不用手动验证：Etherscan 会自动识别 ERC1967 的标准字节码，
-# 并在实现验证通过后把它标成 "Read as Proxy" / "Write as Proxy"
+# 代理地址不用手动验证源码：Etherscan 能抓到 ERC1967 的标准字节码。
+# 但「源码已验证」≠「已被认成代理」——它需要另外做一次代理识别，
+# 否则 Read/Write Contract 标签里读的是代理自己的 ABI（只有 fallback，一个 public 函数都没有），
+# 页面会显示 "Contract ABI methods are not available, no public Read functions found"。
+# 触发方式见下方「代理识别」。
+
+# 两个代币也要验证，它们有构造参数（名字 + 符号），不给参数必然 mismatch
+forge verify-contract <STK> src/MockERC20.sol:MockERC20 --chain sepolia --etherscan-api-key $env:ETHERSCAN_API_KEY `
+  --constructor-args $(cast abi-encode "constructor(string,string)" "Stake Token" "STK")
+forge verify-contract <RWD> src/MockERC20.sol:MockERC20 --chain sepolia --etherscan-api-key $env:ETHERSCAN_API_KEY `
+  --constructor-args $(cast abi-encode "constructor(string,string)" "Reward Token" "RWD")
 ```
+
+`--chain sepolia` 会自动拼出 Etherscan V2 的地址（`api.etherscan.io/v2/api?chainid=11155111`），不需要手写 `--verifier-url`。
+
+### 代理识别
+
+源码验证通过只是「这份字节码能对上这份源码」。要让 Etherscan 把代理和实现接起来，还得再做一步代理识别，两种办法任选：
+
+**页面上点**：进 `0xa1…015D` 的 `Contract` 标签，页面下部有 `Is this a proxy?` 链接，点开确认即可。
+
+**命令行触发**（`verifyproxycontract` 只接受 POST）：
+
+```bash
+curl -X POST -d "address=<代理地址>" \
+  "https://api.etherscan.io/v2/api?chainid=11155111&module=contract&action=verifyproxycontract&apikey=$ETHERSCAN_API_KEY"
+# 返回一个 guid，再查结果：
+curl "https://api.etherscan.io/v2/api?chainid=11155111&module=contract&action=checkproxyverification&guid=<guid>&apikey=$ETHERSCAN_API_KEY"
+```
+
+看到 `implementation contract is found at 0x… and is successfully updated` 就成了。用 `getsourcecode` 复核：`Proxy` 字段应为 `"1"`，`Implementation` 应等于实现地址。
+
+<!-- 自动识别并不总在验证后立刻发生：本项目的代理先于实现验证，实现通过后 `Proxy` 仍是 `0`，必须手动触发一次。 -->
 
 **实现合约没有构造参数**（业务参数全在 `initialize` 里），所以这里不能带 `--constructor-args`。
 带了会报 `constructor args mismatch`——因为验证比的是「这份字节码是不是由这份源码 + 这组参数编译出来的」。
@@ -871,6 +960,9 @@ forge verify-contract $env:IMPLEMENTATION src/StakingRewards.sol:StakingRewards 
 | 干跑报 `ERC20InsufficientBalance` | 干跑基于真实余额模拟，额度已被前一次广播用掉 | 先 `cast call balanceOf` 核对，别怀疑脚本 |
 | `--verify` 报 `Missing etherscan-api-key` | 只配了 RPC，没 export 浏览器 key | `export ETHERSCAN_API_KEY=<key>` 后重跑 |
 | 广播后浏览器查不到源码 | verify 与广播是两个动作，verify 失败不回滚部署 | 补跑 `forge verify-contract <addr> src/StakingRewards.sol:StakingRewards --chain sepolia` |
+| verify 报 `tls handshake eof`，目标是 `api.etherscan.io` 或 `binaries.soliditylang.org` | 本机 `HTTPS_PROXY` 指向 `127.0.0.1:64318`，那个端口对 etherscan 返回 `CONNECT tunnel failed, 502` | 本窗口改用 `$env:HTTPS_PROXY="http://127.0.0.1:7897"`（Clash 混合端口）后重跑；`binaries` 那条多半是瞬时抖动，直接重试即可 |
+| verify 报 `already verified` | 上一次提交其实已经上链成功，只是进度轮询阶段被网络打断 | 不用管，`getsourcecode` 里 `SourceCode` 非空即为已验证 |
+| 代理地址 `Read Contract` 显示 `no public Read functions found` | 源码已验证，但代理识别没做，标签读的是代理自身 ABI（`ERC1967Proxy` 只有 fallback） | 页面点 `Is this a proxy?`，或调一次 `verifyproxycontract`（POST），`Proxy` 变 `1` 后刷新 |
 | 部署成功但池子锁死 | 漏了第 5 步的 `stake(1 wei)`，整期空池 | 脚本已内置，手工部署时别漏 |
 | 代理部署成功，但读什么都是 0 | 交互打到了**实现合约**地址，不是代理。实现合约的存储从来没被写过，也不会报错 | 所有读写都指向代理地址；`implementation()` 能看出代理指向谁 |
 | `forge script` 部署实现时报 `exceeds block gas limit` 或直接被拒 | 实现合约 9,329 字节，Sepolia 上要约 1,479 万 gas。`-g 900` 算出来 1,907 万，超过 EIP-7825 的 16,777,216 | 用 `forge create --gas-limit 16000000` 单独部署实现，这个参数是绝对值，不走倍数换算 |

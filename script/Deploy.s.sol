@@ -63,6 +63,15 @@ contract Deploy is Script {
         // 广播期间 msg.sender 就是 --sender；先抓下来，后面所有断言都用同一个值
         address me = msg.sender;
 
+        // `--account deployer` 只决定谁签名广播，不改变脚本里的 msg.sender。
+        // 漏掉 `--sender` 时 me 是 Foundry 默认地址 0x1804c8AB…，于是 renounceRole 会去撤
+        // 一个本来就没有角色的地址，真部署者保留全部角色，而 `!hasRole(ROLE, me)` 又恰好通过。
+        // 结果就是「脚本说成功、治理没交出去」。这条必须硬拦
+        require(me != DEFAULT_SENDER, "pass --sender <your deployer address> (or the roles stay with the deployer)");
+
+        address declared = _addrOrZero("DEPLOYER");
+        require(declared == address(0) || declared == me, "env DEPLOYER != the --sender address");
+
         // 这个脚本只服务测试网。主网要重写：gas 参数、角色地址、是否需要时间锁都不一样
         require(block.chainid == SEPOLIA_CHAIN_ID, "this script is Sepolia-only");
 

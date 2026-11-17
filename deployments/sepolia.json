@@ -11,5 +11,10 @@
   "rewardsDuration": 604800,
   "stakeToken": "0x3F0211345ce621f3845455E6937670f1F4acBf29",
   "unstakeCooldown": 86400,
-  "upgrader": "0x06aB17f11A98C536149193cCfCF7bC2B8511511B"
+  "upgrader": "0x06aB17f11A98C536149193cCfCF7bC2B8511511B",
+  "implementationV2": "0x1a81E04a8B01580b44d3e84fF49D0518D8B45437",
+  "upgradeTx": "0x97bc3dd2be31c94e0074b50e2d106e94e920e301f9ea79ef05ddde259d29b4e5",
+  "upgradeBlock": 12153519,
+  "upgradeGasUsed": 40032,
+  "upgradeCall": "upgradeToAndCall(address,bytes) with data=0x, msg.value=0"
 }
