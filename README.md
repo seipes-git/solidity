@@ -24,8 +24,9 @@ test/
 │   ├── RoleHandover.t.sol       部署后的角色移交：正确顺序、软拆分、锁死警示
 │   ├── Upgrade.t.sol            UUPS 升级通路：四类代理事故各一条用例
 │   ├── Limits.t.sol             V1 做不到的三件事（与 V2 目录对照阅读）
+│   ├── Reentrancy.t.sol         重入面：恶意代币在 transfer/transferFrom 里回调四个入口
 │   ├── Invariants.t.sol         状态型不变量：handler + 三条等式/序关系（含改冷却的动作）
-│   └── mocks/StakingRewardsV2Mock.sol   升级通路夹具（只加函数，不动存储布局）
+│   └── mocks/                   升级通路夹具 + 会回调的重入代币
 ├── StakingRewardsV2/            V2：只测「比 V1 多做了什么」
 │   ├── StakingRewardsV2Base.sol 基座：V1 部署 + 真实升级到 V2
 │   ├── Behaviour.t.sol          V2 新增能力：观测接口、盈余回收、紧急退出
@@ -49,10 +50,9 @@ test/
 audit/FINDINGS.md               审计发现与修复状态（审计对话与编写对话共用）
 ```
 
-> **部署脚本于 2026-11-12 重写**，当前只有 ERC20 池的测试网版本（`script/Deploy.s.sol`），
-> ETH 池与 V2 升级的脚本尚未落地，所以下文「升级怎么做 / 链上演武 / 源码验证」里引用的
-> `DeployETH.s.sol`、`UpgradeToV2.s.sol`、`DemoFlow.s.sol` 暂不可运行。
-> 旧脚本备份在 `D:\web3\new_9.9\foundry\_archive_test_learn_scripts_20261112\`。
+> **部署脚本于 2026-11-12 重写**，2026-11-17 补齐 ETH 池：ERC20 池用 `script/Deploy.s.sol`，
+> ETH 池用 `script/DeployETH.s.sol`，V1→V2 的升级路径见 `UPGRADE-V2.md`（一次性操作，没有常驻脚本）。
+> `DemoFlow.s.sol` 仍未落地，文中引用它的段落当作示意。
 >
 > **新脚本可以重复跑。** 它把已经做过的步骤读 `deployments/sepolia.json` 跳过，
 > 把「该做还没做」的步骤补齐（例如上次注资成功但 notify 失败）。干跑（不加 `--broadcast`）
@@ -988,7 +988,7 @@ curl "https://api.etherscan.io/v2/api?chainid=11155111&module=contract&action=ch
 ## 常用命令
 
 ```shell
-forge test                                                      # 全部（23 套件 / 263 条）
+forge test                                                      # 全部（24 套件 / 268 条）
 forge test --match-path "test/StakingRewardsETH/*"              # 只跑 ETH 池
 forge test --match-test test_ZeroCooldownReturnsPrincipalImmediately -vvvv    # 单条 + 完整调用轨迹
 forge test --match-contract ETHRecoverTest -vv                   # 一个关注点 + 事件与返回值
