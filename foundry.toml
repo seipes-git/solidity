@@ -1,0 +1,38 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+evm_version = "cancun"
+gas_reports = ["StakingRewards", "StakingRewardsV2", "StakingRewardsETH"]
+
+# 部署脚本要读写 ./deployments/*.json（幂等清单）。Solidity 里的 vm.readFile /
+# vm.writeJson 属于「文件系统访问」，默认被禁；这里只开这一个目录，别给整个项目开
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+
+# 状态型不变量（test/**/Invariants.t.sol）。256 轮 × 32 步，
+# 覆盖率靠轮数、路径长度靠 depth：depth 太浅走不到「存→退→跳时间→领奖→再存」
+[invariant]
+runs = 256
+depth = 32
+
+# ---------------------------------------------------------------
+# 测试网部署用。插值是惰性的：这两个变量没 export 时，build / test 照常跑，
+# 只有真正用到 --rpc-url sepolia 或 --verify 时才会读。
+#   export SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/<你的key>
+#   export ETHERSCAN_API_KEY=<你的key>
+# ---------------------------------------------------------------
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
+
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = "sepolia" }
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false
